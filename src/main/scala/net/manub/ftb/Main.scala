@@ -8,24 +8,33 @@ import com.twitter.util.Await
 import io.circe.generic.auto._
 import io.finch._
 import io.finch.circe._
-
+import doobie.imports._
+import cats._, cats.data._, cats.implicits._
+import fs2.interop.cats._
+import DatabaseOperations._
 object Main extends TwitterServer {
 
-  case class Todo(title: String)
+  private val xa = DriverManagerTransactor[IOLite](
+    "org.postgresql.Driver", "jdbc:postgresql:postgres", "postgres", "password"
+  )
 
   val getTodo: Endpoint[List[Todo]] = get(/) {
-    Ok(List.empty[Todo])
+    Ok(allTodos.list.transact(xa).unsafePerformIO)
   }
 
-  val postTodo: Endpoint[Todo] = post(/ :: jsonBody[Todo]) { todo: Todo =>
+  val postTodo: Endpoint[PostedTodo] = post(/ :: jsonBody[PostedTodo]) { todo: PostedTodo =>
+    insert(todo).run.transact(xa).unsafePerformIO
     Ok(todo)
   }
 
   val deleteTodo: Endpoint[String] = delete(/) {
+    deleteAllTodos.run.transact(xa).unsafePerformIO
     Ok("deleted")
   }
 
   def main(): Unit = {
+
+    dropAndCreateTable.transact(xa).unsafePerformIO
 
     val api = getTodo :+: postTodo :+: deleteTodo
 
